@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+<link type="text/css" href="jscss/style.css" rel="stylesheet" media="screen">
+<script type="text/javascript" src="/jscss/jquery-1.8.3.min.js"></script>
+<script type="text/javascript" src="/jscss/highcharts.js"></script>
+<script type="text/javascript" src="/jscss/exporting.js"></script>
+<script src="/jscss/laydate/laydate.js"></script>
+<script type="text/javascript">
+$(function () {
+   // render_api();
+    render_menus();
+});
+
+function render_menus() {
+    var resp = $.ajax({url:"menus", async:false});
+    var menus = JSON.parse(resp.responseText).menus;
+    var sidebar = $('#sidebar');
+    for (var i=0; i<menus.length; i++) {
+        var menu = menus[i];
+        var mh = $(document.createElement('h2'));
+        mh.text(menu.text);
+        sidebar.append(mh);
+        var m = $(document.createElement('ul'));
+        m.attr('id', 'menu_' + menu.kpi).addClass('menus');
+        sidebar.append(m);
+        render_menu(menu);
+    }
+}
+
+function render_menu(menu) {
+  var items = menu.items;
+  var menus = $("#menu_" + menu.kpi);
+  menus.empty();
+  jQuery.each(items, function(idx, item) {
+    var m = $(document.createElement('li'));
+    m.text(item.text).click(function(evt) {
+        var cb = 'render_criteria_' + menu.kpi + '(item, menu)';
+        eval(cb);
+        $('#sidebar li').removeClass('selected');
+        $(this).addClass('selected');
+        $('#tips').text('指标含义：' + item.desc);
+    });
+    menus.append(m);
+  });
+}
+
+function render_criteria_dispatch_qty(item, menu) {
+  var criteria = $("#criteria");
+  criteria.empty();
+  render_criteria_dispatch_qty_category(item);
+  render_criteria_time(item);
+  render_criteria_dispatch_qty_button(item);
+}
+
+function render_criteria_dispatch_qty_category(item) {
+  var criteria = $("#criteria");
+  var div = $(document.createElement('div')).attr('id', 'criteria_category').attr('class', 'cond');
+  criteria.append(div);
+  var params = {
+    container: div,
+    cond_key: 'city',
+    cond_text: '城市',
+  };
+  render_select(params);
+
+  var params = {
+    container: div,
+    cond_key: 'product_type',
+    cond_text: '产品',
+  };
+  render_select(params);
+
+  if (item.key == 'driver_accept_ratio') {
+      var params = {
+        container: div,
+        cond_key: 'car_type',
+        cond_text: '车型',
+      };
+      render_select(params);
+  }
+}
+
+function render_select(params) {
+  var resp = $.ajax({url:"criteria?kpi=dispatch_qty&cat=" + params.cond_key, async:false});
+  var options = JSON.parse(resp.responseText).options;
+  var label = $(document.createElement('span'));
+  label.text(params.cond_text);
+  var select = $(document.createElement('select')).attr('id', 'cond_' + params.cond_key);
+  for (var i = 0; i < options.length; i++) {
+    var opt = $(document.createElement('option'));
+    opt.val(options[i].code).text(options[i].name);
+    select.append(opt);
+  }
+  var div = params.container;
+  div.append(label).append(select);
+}
+
+function render_criteria_time(item) {
+  var criteria = $("#criteria");
+  var div = $(document.createElement('div')).attr('id', 'criteria_time').attr('class', 'cond');
+  criteria.append(div);
+  var dateLabel = $(document.createElement('span')).text('日期');
+  var today = new Date();
+  var dt = $(document.createElement('input')).attr('id', 'cond_date').val(today.getFullYear() + '-' + (1+today.getMonth()) 
+            + '-' + ((today.getDate() < 10 ? '0':'') + today.getDate()));
+  dt.attr('class', 'laydate-icon');
+  dt.attr('onclick', 'laydate({max: laydate.now()})');
+
+  var hourLabel = $(document.createElement('span')).text('小时');
+  var hr = $(document.createElement('select')).attr('id', 'cond_hour');
+  for (var i = 0; i < 24; i++) {
+    var opt = $(document.createElement('option'));
+    opt.val(i).text(i);
+    if (i == today.getHours()) {
+        opt.attr('selected', 'selected');
+    }
+    hr.append(opt);
+  }
+  var minLabel = $(document.createElement('span')).text('分钟');
+  var mn = $(document.createElement('select')).attr('id', 'cond_time');
+
+  div.append(dateLabel).append(dt);
+  div.append(hourLabel).append(hr);
+  div.append(minLabel).append(mn);
+
+  hr.on('change', function(e) {render_ten(hr, mn);});
+  render_ten.apply(hr, [hr, mn]);
+  var i = parseInt(today.getMinutes()/10)*10;
+  mn.val(today.getHours() + ':' + (i == 0 ? '00' : i));
+}
+
+function render_ten(hr, mn){
+    mn.empty();
+    var h = $(hr).val();
+    for (var i = 0; i < 6; i++) {
+      var opt = $(document.createElement('option'));
+      var mt = i*10;
+      var value = h + ':' + (mt == 0 ? '00' : mt);
+      opt.val(value).text(value);
+      mn.append(opt);
+    }
+}
+
+function render_criteria_dispatch_qty_button(item) {
+  var criteria = $("#criteria");
+  var div = $(document.createElement('div')).attr('class', 'cond');
+  criteria.append(div);
+  var show = $(document.createElement('button')).text('点我刷新');
+  show.on('click', function(e) {
+    if (!checkDate($('#cond_date').val())) {
+        alert("抱歉，您输入的日期格式有误，正确格式应为\"2012-12-12\".");  
+        return false;
+    }
+
+    render_dispatch_qty(item, $('#cond_city').val(), $('#cond_product_type').val(), ($('#cond_car_type') ? $('#cond_car_type').val() : ''), ($('#cond_date').val() + ' ' + $('#cond_time').val()));
+  });
+  div.append(show);
+}
+
+function render_dispatch_qty(item, city, product_type, car_type, datetime) {
+  var url = "dispatch_qty?item=" + item.key + "&city=" + city + '&product_type=' + product_type + '&car_type=' + car_type + '&datetime=' + datetime;
+  var resp = $.ajax({'url': url, async:false});
+  var data = JSON.parse(resp.responseText).data;
+  var content = $("#content");
+  content.empty();
+  content.highcharts({
+        title: {
+            text: item.text,
+            x: -20 //center
+        },
+        xAxis: {
+            categories: data.labels
+        },
+        yAxis: {
+            min: 0,
+            max: 100,
+            title: {
+                text: '%'
+            },
+            plotLines: [{
+                value: 0,
+                width: 1,
+                color: '#808080'
+            }]
+        },
+        plotOptions: {
+            line: {
+                dataLabels: {
+                    enabled: true,
+                    format: '{y}%'
+                },
+            }
+        },
+        tooltip: {
+            enabled: false,
+            valueSuffix: ''
+        },
+        legend: {
+            layout: 'vertical',
+            align: 'right',
+            verticalAlign: 'middle',
+            borderWidth: 0
+        },
+        series: data.series
+    });
+}
+
+function render_criteria_throughput(item, menu) {
+  var criteria = $("#criteria");
+  criteria.empty();
+  render_criteria_time(item);
+  var resp = $.ajax({url:"criteria?kpi=throughput&item=" + item.key, async:false});
+  var modules = JSON.parse(resp.responseText).modules;
+  var params = {
+    cond_type: 'module',
+    cond_text: '接口',
+    onitemclick: render_throughput_period(item, menu),
+  };
+  render_anchor(params, modules);
+}
+
+function render_throughput_period(item, menu) {
+  return function(key, value){
+      var resp = $.ajax({url:"period?api=" + key + '&kpi=' + item.key, async:false});
+      var periods = JSON.parse(resp.responseText).periods;
+      var params = {
+        cond_type: 'period',
+        cond_text: '周期',
+        onitemclick: function(key2, text) {
+            if (item.key == 'slow_tranx') {
+                render_throughput(item, key, key2, '', ($('#cond_date').val() + ' ' + $('#cond_time').val()));
+            } else if (item.key == 'ops') {
+                render_throughput(item, key, key2, '', ($('#cond_date').val() + ' ' + $('#cond_time').val()));
+            }
+        },
+      };
+      render_anchor(params, periods);
+  };
+    
+}
+
+function render_throughput(item, key, period, unit, datetime) {
+  var url = "throughput?kpi=" + item.key + "&api=" + key + '&period=' + period + '&datetime=' + datetime;
+  var resp = $.ajax({'url': url, async:false});
+  var data = JSON.parse(resp.responseText).data;
+  var content = $("#content");
+  content.empty();
+  content.highcharts({
+        chart: {
+            type: 'column'
+        },
+        title: {
+            text: item.text,
+            x: -20 //center
+        },
+        xAxis: {
+            categories: data.labels
+        },
+        yAxis: {
+            title: {
+                text: unit,
+            },
+        },
+        plotOptions: {
+            column: {
+                dataLabels: {
+                    enabled: true,
+                    format: '{y} ' + unit
+                },
+            }
+        },
+        tooltip: {
+            enabled: false,
+            valueSuffix: ''
+        },
+        legend: {
+            layout: 'vertical',
+            align: 'right',
+            verticalAlign: 'middle',
+            borderWidth: 0
+        },
+        series: data.series
+    });
+}
+
+function render_criteria_latency(item, menu) {
+  var resp = $.ajax({url:"criteria?kpi=latency&item=" + item.key, async:false});
+  var modules = JSON.parse(resp.responseText).modules;
+  $("#criteria").empty();
+  render_criteria_time(item);
+
+  var params = {
+    cond_type: 'module',
+    cond_text: '执行步骤',
+    onitemclick: render_period(item.key, menu.kpi),
+  };
+  render_anchor(params, modules);
+}
+
+function render_period(api, kpi) {
+  return function(key, value){
+      var resp = $.ajax({url:"period?api=" + api + '&kpi=' + kpi, async:false});
+      var periods = JSON.parse(resp.responseText).periods;
+      var params = {
+        cond_type: 'period',
+        cond_text: '查看周期',
+        onitemclick: function(key2, text,time) {
+            render_latency(api, key, key2, time);
+        },
+      };
+      render_anchor(params, periods);
+  };
+    
+}
+
+function render_anchor(params, conds) {
+  var criteria = $("#criteria");
+  $('#criteria_' + params.cond_type).remove();
+  var div = $(document.createElement('div'));
+  div.attr('id', 'criteria_' + params.cond_type).attr('class', 'cond');
+  var label = $(document.createElement('span'));
+  label.text(params.cond_text);
+  var condDiv = $(document.createElement('div'));
+  div.append(label);
+  div.append(condDiv);
+  criteria.append(div);
+  jQuery.each(conds, function(key, value) {
+    var a = $(document.createElement('a'));
+    a.text(value).addClass('anchor').click(function(evt) {
+        if (!checkDate($('#cond_date').val())) {
+            alert("抱歉，您输入的日期格式有误，正确格式应为\"2012-12-12\".");  
+            return false;
+        }
+
+        time = ($('#cond_date').val() + ' ' + $('#cond_time').val());
+        
+        params.onitemclick(key, value, time);
+        $('#criteria_' + params.cond_type + ' a').removeClass('selected');
+        $(this).addClass('selected');
+    });
+    condDiv.append(a);
+  });
+}
+
+function checkDate(date) {  
+    var date_format = /^[0-9]{4}-[0-1]?[0-9]{1}-[0-3]?[0-9]{1}$/;  
+    if (date_format.test(date)) {  
+        return true;
+    } else {  
+        return false;
+    }  
+}  
+
+function render_latency(api, module, period, time) {
+  var resp = $.ajax({url:"latency?api=" + api + '&module=' + module + '&period=' + period + '&time=' + time, async:false});
+  var data = JSON.parse(resp.responseText).data;
+  var content = $("#content");
+  content.empty();
+  content.highcharts({
+        title: {
+            text: 'Time consumed: ' + api + ' [ ' + module + ' ]',
+            x: -20 //center
+        },
+        xAxis: {
+            categories: data.labels
+        },
+        yAxis: {
+            title: {
+                text: 'Time(ms)'
+            },
+            plotLines: [{
+                value: 0,
+                width: 1,
+                color: '#808080'
+            }]
+        },
+        tooltip: {
+            valueSuffix: 'ms'
+        },
+        legend: {
+            layout: 'vertical',
+            align: 'right',
+            verticalAlign: 'middle',
+            borderWidth: 0
+        },
+        series: data.series
+    });
+    var chart = content.highcharts();
+    chart.series[3].hide();
+    chart.series[4].hide();
+    chart.series[5].hide();
+    chart.series[6].hide();
+}
+</script>
+</head>
+<body>
+    <div id="main_frame">
+        <div id="header">
+            <h1 style="display: inline-block;">XX性能监测系统</h1>
+            <div style="position:absolute; top:70px; right:20px;">
+                <span>Powered by Liuchang</span> | 问题/意见反馈：<a href="mailto:liuchang@liuchangit.com">liuchang@liuchangit.com</a>
+            </div>
+        </div>
+        <div id="sidebar">
+        </div>
+        <div id="container">
+            <div id="tips"> </div>
+            <div id="criteria" class="criteria"> </div>
+            <div id="content"></div>
+        </div>
+    </div>
+</body>
+</html>
+
